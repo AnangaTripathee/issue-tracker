@@ -1,13 +1,20 @@
+'use client';
+
 import Link from 'next/link'
+import { usePathname } from 'next/navigation';
 import React from 'react'
 import { BiSolidBug } from "react-icons/bi";
+import classnames from 'classnames'; //contains classes we want to render
+
 
 
 const NavBar = () => {
+  const currentPath = usePathname();
+  
   
   const links = [
     { label: 'Dashboard', href: '/'},
-    { label: 'Issues', href: '/'}
+    { label: 'Issues', href: '/issues'}
 
   ]
   return (
@@ -17,7 +24,12 @@ const NavBar = () => {
           {links.map(link => 
            <Link 
             key={link.href} 
-            className= 'text-zinc-500 hover:text-zinc-800 transition-colors' 
+            // styling active links
+            className= {classnames({
+              'text-zinc-900' : link.href == currentPath,
+              'text-zinc-500' : link.href !== currentPath,
+              'hover:text-zinc-800 transition-colors': true
+            })} 
             href={link.href}>{link.label}</Link> )}
           
         </ul>
