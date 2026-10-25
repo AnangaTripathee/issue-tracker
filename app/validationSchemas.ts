@@ -8,8 +8,8 @@ export const DESCRIPTION_MAX_LENGTH = 10_000;
 // These lists must match the enums in prisma/schema.prisma. `satisfies` makes
 // TypeScript fail if a value here is not a real Prisma enum value. (Only the
 // types are imported, so the browser bundle does not include Prisma.)
-const STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const satisfies readonly Status[];
-const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const satisfies readonly Priority[];
+export const STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const satisfies readonly Status[];
+export const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const satisfies readonly Priority[];
 
 // trim() runs before min(), so a title of only spaces is rejected.
 const title = z
