@@ -1,8 +1,6 @@
+import { redirect } from 'next/navigation';
 
-
+// The issues list is the app's starting page.
 export default function Home() {
-  return (
-    <div>Hello World</div>
-    
-  )
+  redirect('/issues');
 }
