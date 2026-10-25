@@ -1,29 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/prisma/client";
 import { createIssueSchema } from "../../validationSchemas";
+import { jsonError, fieldError, readJson, serverError, validationError } from "@/lib/api";
+import { createIssue, listIssues } from "@/lib/issues";
+import { userExists } from "@/lib/users";
 
-export async function POST(request: NextRequest) {
-    // request.json() throws if the body is not valid JSON.
-    let body: unknown;
+// GET /api/issues
+export async function GET() {
     try {
-        body = await request.json();
-    } catch {
-        return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
-    }
-
-    const validation = createIssueSchema.safeParse(body);
-    if (!validation.success)
-        return NextResponse.json(validation.error.format(), { status: 400 });
-
-    try {
-        // Save the validated (trimmed) values, never the raw request body.
-        const newIssue = await prisma.issue.create({
-            data: { title: validation.data.title, description: validation.data.description }
-        });
-        return NextResponse.json(newIssue, { status: 201 });
+        return NextResponse.json(await listIssues());
     } catch (error) {
-        // Keep the details in the server log; the client only gets a generic message.
-        console.error("Failed to create issue:", error);
-        return NextResponse.json({ error: "Could not create the issue. Please try again later." }, { status: 500 });
+        return serverError("load issues", error);
+    }
+}
+
+// POST /api/issues
+export async function POST(request: NextRequest) {
+    const json = await readJson(request);
+    if (!json) return jsonError("Request body must be valid JSON.", 400);
+
+    const validation = createIssueSchema.safeParse(json.body);
+    if (!validation.success) return validationError(validation.error);
+    const data = validation.data; // validated and trimmed values only
+
+    try {
+        if (typeof data.assigneeId === "number" && !(await userExists(data.assigneeId)))
+            return fieldError("assigneeId", "Assignee does not exist.");
+
+        return NextResponse.json(await createIssue(data), { status: 201 });
+    } catch (error) {
+        return serverError("create the issue", error);
     }
 }

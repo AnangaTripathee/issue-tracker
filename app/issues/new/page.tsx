@@ -9,7 +9,7 @@ import "easymde/dist/easymde.min.css";
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createIssueSchema } from '@/app/validationSchemas';
+import { issueFormSchema } from '@/app/validationSchemas';
 import { z } from 'zod';
 import ErrorMessage from '@/app/component/ErrorMessage';
 
@@ -24,12 +24,12 @@ const labelEditor = (editor: Editor) => {
   editor.getInputField().setAttribute('aria-labelledby', 'description-label');
 };
 
-type IssueForm = z.infer<typeof createIssueSchema>;
+type IssueForm = z.infer<typeof issueFormSchema>;
 
 const NewIssuePage = () => {
   const router = useRouter();
   const {register, control, handleSubmit, formState:{errors}} = useForm<IssueForm>({
-    resolver: zodResolver(createIssueSchema)
+    resolver: zodResolver(issueFormSchema)
   });
   const [error, setError] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
