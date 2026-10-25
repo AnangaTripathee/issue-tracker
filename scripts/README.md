@@ -19,8 +19,8 @@ invalid IDs. It also covers search and status filtering on `GET /api/issues`
 - literal `%` and `_`,
 - invalid and oversized parameters.
 
-This is a temporary manual check. The project's automated test suite will
-replace it.
+This script is the project's automated test suite. There is no separate
+unit-test framework.
 
 ### Prerequisites
 
@@ -62,7 +62,16 @@ because otherwise it could not be sure which database that server uses.
 
 ### Running it
 
-From the project root:
+From the project root. These npm scripts run the same commands:
+
+```powershell
+npm run build
+npm run test:api:setup     # same as: ... api-smoke-test.ps1 -Setup
+npm run test:api           # same as: ... api-smoke-test.ps1
+npm run test:api:db-down   # same as: ... api-smoke-test.ps1 -DatabaseDown
+```
+
+Or call the script directly, for example to pass `-Port`:
 
 ```powershell
 npm run build

@@ -8,7 +8,7 @@
   sends real HTTP requests, and checks status codes and response fields.
   It creates and DELETES issues, so it only runs against a separate test database.
 
-  This is a temporary manual check, not the project's automated test suite.
+  This is the project's automated API test suite (no unit-test framework is used).
 
 .PARAMETER Port
   Port for the temporary server (default: TEST_API_PORT or 3100). Must be free.
