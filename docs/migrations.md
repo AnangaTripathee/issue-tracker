@@ -1,5 +1,9 @@
 # Migration notes
 
+> **Fresh clones: nothing in this file applies to you.** Follow the setup in the
+> README (`npx prisma migrate deploy`). This page is a historical record for
+> databases created during early development.
+
 ## One-time repair: table casing in `add_resolved_status` (2026-10-24)
 
 `20261019025636_create_issue` creates `` `Issue` ``, but
