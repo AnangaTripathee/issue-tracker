@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
+> **Database migration note:** one existing migration was repaired for table-name
+> casing. If you have a database created before 2026-10-24, read
+> [docs/migrations.md](docs/migrations.md) before running `prisma migrate dev`.
+
 ## Getting Started
 
 First, run the development server:
