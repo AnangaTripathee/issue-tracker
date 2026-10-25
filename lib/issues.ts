@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import prisma from '@/prisma/client';
-import type { CreateIssueInput, UpdateIssueInput } from '@/app/validationSchemas';
+import type { CreateIssueInput, IssueQuery, UpdateIssueInput } from '@/app/validationSchemas';
 import { MAX_DB_INT } from './ids';
 
 // The fields every endpoint returns. The assignee is a small { id, name }
@@ -21,9 +21,31 @@ function isRecordNotFound(error: unknown) {
     return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
 }
 
+// Prisma sends `contains` to MySQL as LIKE '%text%' without escaping the text,
+// so a % or _ typed by the user would act as a wildcard ("50%" would match
+// "50 items"). Putting a backslash (LIKE's escape character) before %, _ and
+// \ itself makes them match literally.
+function escapeLike(text: string) {
+    return text.replace(/[\\%_]/g, char => `\\${char}`);
+}
+
 // Newest first. id breaks ties between issues created in the same millisecond.
-export function listIssues() {
+// Optional filters (already validated by issueQuerySchema):
+//   q      -> title OR description contains q
+//   status -> status equals the value
+// Both together mean (title OR description matches) AND status matches.
+// Prisma ignores conditions whose value is undefined, so no filter = all issues.
+// `contains` becomes SQL LIKE; with the columns' utf8mb4_unicode_ci collation
+// it is case- and accent-insensitive.
+export function listIssues(query: IssueQuery = {}) {
+    const search = query.q ? escapeLike(query.q) : undefined;
     return prisma.issue.findMany({
+        where: {
+            status: query.status,
+            OR: search
+                ? [{ title: { contains: search } }, { description: { contains: search } }]
+                : undefined
+        },
         select: issueSelect,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
     });

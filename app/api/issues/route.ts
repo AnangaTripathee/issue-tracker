@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createIssueSchema } from "../../validationSchemas";
-import { jsonError, fieldError, readJson, serverError, validationError } from "@/lib/api";
+import { createIssueSchema, issueQuerySchema } from "../../validationSchemas";
+import { jsonError, fieldError, readJson, searchParamsToObject, serverError, validationError } from "@/lib/api";
 import { createIssue, listIssues } from "@/lib/issues";
 import { userExists } from "@/lib/users";
 
-// GET /api/issues
-export async function GET() {
+// GET /api/issues?q=<search>&status=<STATUS>  (both optional, see docs/api.md)
+export async function GET(request: NextRequest) {
+    const query = issueQuerySchema.safeParse(searchParamsToObject(request.nextUrl.searchParams));
+    if (!query.success) return validationError(query.error);
+
     try {
-        return NextResponse.json(await listIssues());
+        return NextResponse.json(await listIssues(query.data));
     } catch (error) {
         return serverError("load issues", error);
     }

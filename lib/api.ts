@@ -23,6 +23,18 @@ export function serverError(action: string, error: unknown) {
     return jsonError(`Could not ${action}. Please try again later.`, 500);
 }
 
+// Turns URL query parameters into the same shape Next.js gives pages as
+// `searchParams`: one value -> string, a repeated parameter -> string[].
+// That lets the API and the /issues page validate queries with one schema.
+export function searchParamsToObject(params: URLSearchParams) {
+    const result: Record<string, string | string[]> = {};
+    for (const key of new Set(params.keys())) {
+        const values = params.getAll(key);
+        result[key] = values.length === 1 ? values[0] : values;
+    }
+    return result;
+}
+
 // request.json() throws on malformed JSON. Returns null in that case, otherwise
 // { body } (wrapped, because a valid JSON body can itself be null).
 export async function readJson(request: NextRequest): Promise<{ body: unknown } | null> {

@@ -59,5 +59,25 @@ export const updateIssueSchema = createIssueSchema
         message: 'Provide at least one field to update: title, description, status, priority or assigneeId.'
     });
 
+// Longest search text accepted by GET /api/issues and the /issues page (after trimming).
+export const SEARCH_MAX_LENGTH = 100;
+
+// Query parameters for listing issues: ?q=<search>&status=<STATUS>.
+// Both are optional. An empty or whitespace-only value means "no filter".
+// A parameter given twice (an array) is rejected rather than guessed at.
+export const issueQuerySchema = z.object({
+    q: z
+        .string({ invalid_type_error: 'Search (q) can only be given once.' })
+        .trim()
+        .max(SEARCH_MAX_LENGTH, `Search must be ${SEARCH_MAX_LENGTH} characters or fewer.`)
+        .optional()
+        .transform(q => q || undefined), // "" -> no search
+    status: z.preprocess(
+        value => (value === '' ? undefined : value), // "" -> no status filter
+        status.optional()
+    )
+});
+
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 export type UpdateIssueInput = z.infer<typeof updateIssueSchema>;
+export type IssueQuery = z.infer<typeof issueQuerySchema>;
