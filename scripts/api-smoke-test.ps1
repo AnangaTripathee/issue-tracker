@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-  End-to-end smoke test for the issue API (Phase 1). See scripts/README.md.
+  End-to-end smoke test for the issue API, including search and status
+  filtering. See scripts/README.md.
 
 .DESCRIPTION
   Starts the production build with DATABASE_URL replaced by TEST_DATABASE_URL,
@@ -99,6 +100,8 @@ if ($Setup -and -not $DatabaseDown) {
 # ---------------------------------------------------------------------------
 
 $script:pass = 0; $script:fail = 0
+# IDs of every issue this run creates, so they can be deleted at the end even if a check fails.
+$script:createdIds = New-Object 'System.Collections.Generic.List[int]'
 
 function Req($method, $path, $body = $null) {
   $p = @{ Uri = "$base$path"; Method = $method; UseBasicParsing = $true }
@@ -110,6 +113,7 @@ function Req($method, $path, $body = $null) {
     $code = [int]$resp.StatusCode; $raw = (New-Object IO.StreamReader($resp.GetResponseStream())).ReadToEnd()
   }
   $json = $null; if ($raw) { try { $json = $raw | ConvertFrom-Json } catch {} }
+  if ($method -eq 'POST' -and $path -eq '/api/issues' -and $code -eq 201 -and $json.id) { $script:createdIds.Add([int]$json.id) }
   @{ code = $code; raw = $raw; json = $json }
 }
 function Check($name, $cond, $info = '') {
@@ -237,6 +241,86 @@ function Test-Api {
   foreach ($x in $b, $c) { Expect "cleanup DELETE $($x.id)" (Req DELETE "/api/issues/$($x.id)") 204 }
 }
 
+# Search (?q=) and status filter (?status=). A random marker that exists only in
+# this run's issues keeps the checks independent of other data in the test database.
+function Test-Search {
+  $m = 'smk' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+  function Enc($text) { [uri]::EscapeDataString($text) }
+  function Ids($path) { $r = Req GET $path; if ($r.code -ne 200) { return @('HTTP ' + $r.code) }; , @($r.json | ForEach-Object { $_.id }) }
+  function Same($actual, $expected) { (@($actual) -join ',') -eq (@($expected) -join ',') }
+  function NewIssue($title, $description, $status) {
+    $body = @{ title = "[TEMP smoke-search] $title"; description = $description; status = $status } | ConvertTo-Json
+    $r = Req POST '/api/issues' $body
+    if ($r.code -ne 201) { throw "Could not create search test issue: $($r.code) $($r.raw)" }
+    $r.json
+  }
+
+  $open = NewIssue "$m login page broken" 'Steps to reproduce.' 'OPEN'
+  $prog = NewIssue 'Session timeout' "Happens after $m login with SSO." 'IN_PROGRESS'   # marker only in the description
+  $res = NewIssue "$m export report" 'CSV is empty.' 'RESOLVED'
+  $closed = NewIssue 'Unrelated closed issue' 'Nothing to see here.' 'CLOSED'          # no marker at all
+  $pct = NewIssue "$m 50% done" 'Progress note.' 'OPEN'
+  $byStatus = @{ OPEN = @($open.id, $pct.id); IN_PROGRESS = @($prog.id); RESOLVED = @($res.id); CLOSED = @($closed.id) }
+  $mine = @($open.id, $prog.id, $res.id, $closed.id, $pct.id)
+
+  # --- status filter
+  foreach ($s in 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED') {
+    $r = Req GET "/api/issues?status=$s"; Expect "GET ?status=$s" $r 200
+    $wrong = @($r.json | Where-Object { $_.status -ne $s })
+    $ids = @($r.json | ForEach-Object { $_.id })
+    $missing = @($byStatus[$s] | Where-Object { $ids -notcontains $_ })
+    $leaked = @($mine | Where-Object { $byStatus[$s] -notcontains $_ -and $ids -contains $_ })
+    Check "?status=$s returns only $s issues, including ours" ($wrong.Count -eq 0 -and $missing.Count -eq 0 -and $leaked.Count -eq 0) "wrong=$($wrong.Count) missing=$($missing -join ',') leaked=$($leaked -join ',')"
+  }
+
+  # --- search (results must also stay newest first, i.e. highest id first here)
+  $markerIds = @($pct.id, $res.id, $prog.id, $open.id)
+  $r = Req GET "/api/issues?q=$m"; Expect 'GET ?q=<marker>' $r 200
+  Check 'search keeps the response shape (assignee object)' ($r.json.Count -gt 0 -and ($r.json[0].PSObject.Properties.Name -contains 'assignee')) $r.raw
+  $ids = Ids "/api/issues?q=$m"
+  Check 'search: title match, description-only match, newest first' (Same $ids $markerIds) "got $($ids -join ',') expected $($markerIds -join ',')"
+  Check 'search excludes unrelated issues' ($ids -notcontains $closed.id) ($ids -join ',')
+  $ids = Ids ('/api/issues?q=' + (Enc "$m login"))
+  Check 'search phrase matches title OR description' (Same $ids @($prog.id, $open.id)) ($ids -join ',')
+  $ids = Ids ('/api/issues?q=' + (Enc "   $m   "))
+  Check 'surrounding whitespace in q is trimmed' (Same $ids $markerIds) ($ids -join ',')
+  $ids = Ids "/api/issues?q=$($m.ToUpper())"
+  Check 'search is case-insensitive (utf8mb4_unicode_ci)' (Same $ids $markerIds) ($ids -join ',')
+  $ids = Ids ('/api/issues?q=' + (Enc "$m 50%"))
+  Check '% in search matches a literal %' (Same $ids @($pct.id)) ($ids -join ',')
+  $ids = Ids ('/api/issues?q=' + (Enc "$m%"))
+  Check '% is not a wildcard' ($ids.Count -eq 0) ($ids -join ',')
+  $ids = Ids ('/api/issues?q=' + (Enc ($m + '_')))
+  Check '_ is not a wildcard' ($ids.Count -eq 0) ($ids -join ',')
+
+  # --- search + status together
+  $ids = Ids "/api/issues?q=$m&status=OPEN"
+  Check 'q + status=OPEN' (Same $ids @($pct.id, $open.id)) ($ids -join ',')
+  $ids = Ids "/api/issues?status=IN_PROGRESS&q=$m"
+  Check 'q + status=IN_PROGRESS (description match)' (Same $ids @($prog.id)) ($ids -join ',')
+  $r = Req GET "/api/issues?q=$m&status=CLOSED"
+  Check 'q + status with no overlap -> 200 []' ($r.code -eq 200 -and $r.raw -eq '[]') "$($r.code) $($r.raw)"
+  $r = Req GET "/api/issues?q=$($m)nothingmatchesthis"
+  Check 'no matches -> 200 []' ($r.code -eq 200 -and $r.raw -eq '[]') "$($r.code) $($r.raw)"
+
+  # --- empty values mean "no filter"
+  $all = Ids '/api/issues'
+  Check 'empty q is unfiltered' (Same (Ids '/api/issues?q=') $all)
+  Check 'whitespace-only q is unfiltered' (Same (Ids ('/api/issues?q=' + (Enc '   '))) $all)
+  Check 'empty status is unfiltered' (Same (Ids '/api/issues?status=') $all)
+  Check 'empty q and status is unfiltered' (Same (Ids '/api/issues?q=&status=') $all)
+
+  # --- invalid values
+  $r = Req GET '/api/issues?status=DONE'; Expect 'invalid status' $r 400
+  Check 'invalid status message lists allowed values' ($r.json.details.fieldErrors.status[0] -like '*OPEN, IN_PROGRESS, RESOLVED, CLOSED*') $r.raw
+  Expect 'lowercase status' (Req GET '/api/issues?status=open') 400
+  Expect 'status given twice' (Req GET '/api/issues?status=OPEN&status=CLOSED') 400
+  $r = Req GET ('/api/issues?q=' + ('a' * 101)); Expect 'search of 101 characters' $r 400
+  Check 'oversized search message' ($r.json.details.fieldErrors.q[0] -eq 'Search must be 100 characters or fewer.') $r.raw
+  Expect 'search of exactly 100 characters' (Req GET ('/api/issues?q=' + ('a' * 100))) 200
+  Expect 'q given twice' (Req GET '/api/issues?q=a&q=b') 400
+}
+
 # ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
@@ -253,8 +337,15 @@ try {
   }
   if (-not $ready) { throw "Server did not start. See $log.err" }
 
-  if ($DatabaseDown) { Test-DatabaseDown } else { Test-Api }
+  if ($DatabaseDown) { Test-DatabaseDown } else { Test-Api; Test-Search }
 } finally {
+  # Delete anything this run created that is still there (e.g. after a failed check).
+  # Only IDs recorded from this run's own POST responses are touched.
+  if ($script:createdIds.Count -gt 0) {
+    $removed = 0
+    foreach ($id in $script:createdIds) { if ((Req DELETE "/api/issues/$id").code -eq 204) { $removed++ } }
+    "Cleanup: deleted $removed remaining test issue(s) created by this run."
+  }
   Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
   # On Windows, `next start` can leave a child process holding the port.
   if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) {

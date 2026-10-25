@@ -6,7 +6,18 @@ An end-to-end check of the issue API. It starts the production build against a
 **separate test database**, sends real HTTP requests, and checks status codes and
 response bodies. This includes creation, list and detail, partial updates, every
 status and priority, assigning and unassigning, deletion, invalid input, and
-invalid IDs.
+invalid IDs. It also covers search and status filtering on `GET /api/issues`
+(see [docs/api.md](../docs/api.md)):
+
+- each status filter,
+- title and description-only matches,
+- search combined with status,
+- whitespace trimming,
+- empty values meaning no filter,
+- empty results,
+- case-insensitivity,
+- literal `%` and `_`,
+- invalid and oversized parameters.
 
 This is a temporary manual check. The project's automated test suite will
 replace it.
@@ -70,8 +81,21 @@ powershell -ExecutionPolicy Bypass -File scripts/api-smoke-test.ps1 -Port 3200
 ```
 
 Each check prints `PASS` or `FAIL`. The script exits with code 1 if any check
-fails. Server output goes to a log file in your temp folder, and the script
-prints its path.
+fails or the script stops with an error. Server output goes to a log file in
+your temp folder, and the script prints its path.
 
-The script deletes only the issues it creates. Users created by `-Setup` stay
-in the test database.
+### Test data and cleanup
+
+- The checks do not need an empty test database. The search checks put a random
+  marker, such as `smk1a2b3c4d5e`, into the issues they create. They then compare
+  exact issue IDs, so other issues in the database cannot affect the results.
+- Test issues have titles starting with `[TEMP smoke-search]` or the fixed
+  titles used by the CRUD checks.
+- The script records the ID of every issue it creates. At the end it deletes any
+  that are still there, including after a failed check or an early stop. It then
+  prints `Cleanup: deleted N remaining test issue(s)...`. It never deletes issues
+  it did not create.
+- If the script is killed outright (for example, the terminal is closed), cleanup
+  cannot run. Its server may then still be listening on the port, and its test
+  issues may remain in the test database.
+- Users created by `-Setup` stay in the test database.
